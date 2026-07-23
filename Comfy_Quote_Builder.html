@@ -236,6 +236,16 @@
   .oc-item .p{font-family:var(--disp);font-weight:700;white-space:nowrap;}
   .oc-item .x{color:#ffb0b0;font-size:1.2rem;padding:4px 9px;}
   .oc-empty{opacity:.5;font-size:.95rem;font-style:italic;}
+  .oc-adj{display:flex;flex-direction:column;gap:6px;margin:2px 0 8px;}
+  .oc-adj-row{display:flex;align-items:center;gap:8px;background:rgba(255,255,255,.06);border-radius:9px;padding:6px 10px;}
+  .oc-adj-row label{font-size:.78rem;font-weight:600;flex:1;}
+  .oc-adj-row.rebate label{color:#FFB3B6;}
+  .oc-adj-row.misc label{color:#B7D1FF;}
+  .oc-adj-sign{font-family:var(--disp);font-weight:800;font-size:.95rem;width:14px;text-align:center;}
+  .oc-adj-row.rebate .oc-adj-sign{color:var(--red);}
+  .oc-adj-row.misc .oc-adj-sign{color:#9fc4ff;}
+  .oc-adj-row input{width:90px;border:none;border-radius:7px;padding:6px 8px;font-family:var(--disp);font-weight:700;font-size:.95rem;text-align:right;background:rgba(255,255,255,.14);color:#fff;}
+  .oc-adj-row input::placeholder{color:rgba(255,255,255,.4);}
   .oc-total{display:flex;justify-content:space-between;align-items:baseline;border-top:1px solid rgba(255,255,255,.16);padding-top:9px;}
   .oc-total .lbl{font-size:.8rem;letter-spacing:.1em;text-transform:uppercase;opacity:.7;}
   .oc-total .amt{font-family:var(--disp);font-weight:900;font-size:1.7rem;}
@@ -469,7 +479,7 @@ for(const k in DATA) if(DATA[k].sizes){
   }
   curSize[k]=best;
 }
-let options=[{name:'Option A',picks:{}}];
+let options=[{name:'Option A',picks:{},rebate:0,misc:0}];
 let activeOpt=0;
 let termYrs=10, apr=9.99;
 
@@ -493,7 +503,7 @@ const money=n=>'$'+Math.round(n).toLocaleString();
 })();
 function monthly(P){const n=termYrs*12,r=apr/100/12;if(P<=0)return 0;return r===0?P/n:P*r/(1-Math.pow(1+r,-n));}
 const optLetter=i=>'Option '+String.fromCharCode(65+i);
-const optTotal=o=>Object.values(o.picks).reduce((s,p)=>s+adj(p.price)*(p.qty||1),0);
+const optTotal=o=>Object.values(o.picks).reduce((s,p)=>s+adj(p.price)*(p.qty||1),0)-(o.rebate||0)+(o.misc||0);
 
 /* ============ option tabs ============ */
 function renderOptTabs(){
@@ -505,7 +515,7 @@ function renderOptTabs(){
 }
 $('optAdd').onclick=()=>{
   if(options.length>=4)return;
-  options.push({name:optLetter(options.length),picks:{}});
+  options.push({name:optLetter(options.length),picks:{},rebate:0,misc:0});
   activeOpt=options.length-1;renderAll();
 };
 
@@ -620,11 +630,28 @@ function renderOptCards(){
           ${options.length>1?`<button data-act="del" data-o="${oi}">remove</button>`:''}
         </span></div>
       ${rows}
+      <div class="oc-adj">
+        <div class="oc-adj-row rebate"><span class="oc-adj-sign">−</span><label>Rebate</label>
+          <input type="text" inputmode="decimal" autocomplete="off" placeholder="0" value="${o.rebate||''}" data-o="${oi}" data-field="rebate"></div>
+        <div class="oc-adj-row misc"><span class="oc-adj-sign">+</span><label>Miscellaneous Cost</label>
+          <input type="text" inputmode="decimal" autocomplete="off" placeholder="0" value="${o.misc||''}" data-o="${oi}" data-field="misc"></div>
+      </div>
       <div class="oc-total"><span class="lbl">Total investment</span><span class="amt">${money(total)}</span></div>
       <div class="oc-pay"><span class="pl">Est. monthly<br>${termYrs} yr · ${apr.toFixed(2)}%</span>
         <span class="pa"><span>$</span>${Math.round(monthly(total)).toLocaleString()}<span>/mo</span></span></div>
     </div>`;
   }).join('');
+  $('optCards').querySelectorAll('.oc-adj-row input').forEach(inp=>{
+    inp.oninput=()=>{
+      const raw=inp.value.replace(/[^0-9.]/g,'');
+      const o=options[+inp.dataset.o];
+      const v=Math.max(0, parseFloat(raw)||0);
+      o[inp.dataset.field]=v;
+      renderAll();
+      const fresh=document.querySelector(`.oc-adj-row.${inp.dataset.field} input[data-o="${inp.dataset.o}"]`);
+      if(fresh){ fresh.focus(); fresh.setSelectionRange(fresh.value.length, fresh.value.length); }
+    };
+  });
   $('optCards').querySelectorAll('.x').forEach(b=>b.onclick=()=>{delete options[+b.dataset.o].picks[b.dataset.k];renderAll();});
   $('optCards').querySelectorAll('[data-act=build]').forEach(b=>b.onclick=()=>{activeOpt=+b.dataset.o;renderAll();});
   $('optCards').querySelectorAll('[data-act=del]').forEach(b=>b.onclick=()=>{
@@ -663,8 +690,12 @@ function buildProposal(){
       const sub=p.size?`${DATA[p.cat].name} · ${p.size} · ${p.tier}`:`${DATA[p.cat].name}${qty}`;
       return `<div class="pp-item"><span>${p.model}<small>${sub}</small></span><span class="pv">${money(line)}</span></div>`;
     }).join('');
+    const adjLines=(
+      (o.rebate>0?`<div class="pp-item"><span>Rebate</span><span class="pv">−${money(o.rebate)}</span></div>`:'')+
+      (o.misc>0?`<div class="pp-item"><span>Miscellaneous Cost</span><span class="pv">${money(o.misc)}</span></div>`:'')
+    );
     const total=optTotal(o);
-    return `<div class="pp-opt"><h2>${o.name}</h2><div class="pp-items">${items}</div>
+    return `<div class="pp-opt"><h2>${o.name}</h2><div class="pp-items">${items}${adjLines}</div>
       <div class="pp-tot"><span>Total Investment</span><span>${money(total)}</span></div>
       <div class="pp-pay"><span class="l">Est. monthly<br>${termYrs} yr · ${apr.toFixed(2)}% APR</span><span class="v">${money(monthly(total))}/mo</span></div></div>`;
   }).join('');
@@ -769,11 +800,15 @@ function buildPresent(){
       const thumb=ph?`<img src="${ph}" style="width:52px;height:52px;object-fit:contain;border-radius:8px;border:1px solid #E3ECF7;flex-shrink:0;background:#fff;" alt="">`:'';
       return `<div class="pv-line" style="align-items:center;">${thumb}<span class="n" style="flex:1;">${p.model}${(p.qty||1)>1?' × '+p.qty:''}<small>${DATA[p.cat].name}</small></span><span class="p">${money(line)}</span></div>`;
     }).join('');
+    const adjLines=(
+      (o.rebate>0?`<div class="pv-line"><span class="n">Rebate</span><span class="p">−${money(o.rebate)}</span></div>`:'')+
+      (o.misc>0?`<div class="pv-line"><span class="n">Miscellaneous Cost</span><span class="p">${money(o.misc)}</span></div>`:'')
+    );
     const hot=ci===opts.length-1&&opts.length>1?' hot':'';
     return `<div class="pv-col${hot}">
       <div class="pv-band" style="background:${tc};${tl==='BEST'?'color:#152647;':''}">${tl}<small>${o.name}</small></div>
       <div class="pv-imgs">${imgs}</div>
-      <div class="pv-list">${eqLines}${adLines}</div>
+      <div class="pv-list">${eqLines}${adLines}${adjLines}</div>
       <div class="pv-tot"><span>Total Investment</span><span>${money(total)}</span></div>
       <div class="pv-pay"><span class="l">As low as<br>${termYrs} yr · ${apr.toFixed(2)}% APR</span><span class="v"><span>$</span>${Math.round(monthly(total)).toLocaleString()}<span>/mo</span></span></div>
     </div>`;
